@@ -1,4 +1,8 @@
-# 🚀 Enterprise Compliance AI Agent
+<p align="center">
+  <img src="assets/logo-full.png" alt="Legal Compliance AI Agent logo" width="280">
+</p>
+
+# 🚀 Legal Compliance AI Agent
 
 > Agentic AI | RAG | Memory | Guardrails | Groq LLM
 
@@ -6,7 +10,7 @@
 
 ## 📌 Project Overview
 
-Enterprise Compliance AI Agent is an AI-powered web application developed as part of the IIT Mandi AI Program Mini Project.
+Legal Compliance AI Agent is an enterprise AI-powered web application developed as part of the IIT Mandi AI Program Mini Project.
 
 The application enables organizations to upload compliance documents and ask questions using natural language.
 
@@ -122,6 +126,7 @@ ComplianceAgent
 ├── create_vector_db.py
 ├── requirements.txt
 ├── README.md
+├── assets
 ├── data
 ├── utils
 └── screenshots
