@@ -206,8 +206,11 @@ def inject_css():
     }
     .stApp { background: var(--ca-bg); }
 
-    /* Hide default Streamlit chrome for a custom app feel */
-    [data-testid="stToolbar"] { visibility: hidden; height: 0; }
+    /* Hide default Streamlit chrome for a custom app feel, but keep the
+       sidebar re-expand control (it lives inside stToolbar) usable. */
+    [data-testid="stToolbarActions"] { visibility: hidden; }
+    [data-testid="stToolbar"] { height: 0; }
+    [data-testid="stExpandSidebarButton"] { visibility: visible !important; }
     footer { visibility: hidden; height: 0; }
     [data-testid="stAppViewBlockContainer"], .block-container {
         max-width: 980px;
