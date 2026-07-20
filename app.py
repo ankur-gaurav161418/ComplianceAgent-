@@ -208,9 +208,7 @@ def inject_css():
 
     /* Hide default Streamlit chrome for a custom app feel, but keep the
        sidebar re-expand control (it lives inside stToolbar) usable. */
-    [data-testid="stToolbarActions"],
-    [data-testid="stAppDeployButton"],
-    [data-testid="stMainMenu"] { visibility: hidden; }
+    [data-testid="stToolbarActions"] { visibility: hidden; }
     [data-testid="stToolbar"] { height: 0; }
     [data-testid="stExpandSidebarButton"] { visibility: visible !important; }
     footer { visibility: hidden; height: 0; }
@@ -454,46 +452,6 @@ def inject_css():
         font-size: .72rem; color: var(--ca-text-muted);
         text-align: center; margin-top: .5rem;
     }
-
-    /* ---------- Login page ---------- */
-    .ca-login-wrap { padding-top: 8vh; }
-    .st-key-ca_login_card {
-        background: var(--ca-surface);
-        border: 1px solid var(--ca-border);
-        border-radius: var(--ca-radius);
-        box-shadow: var(--ca-shadow);
-        padding: 2.2rem 2rem 1.8rem 2rem;
-        text-align: center;
-    }
-    .ca-login-brand { display: flex; flex-direction: column; align-items: center; gap: .7rem; margin-bottom: 1.4rem; }
-    .ca-login-title { font-size: 1.2rem; font-weight: 700; color: var(--ca-text); }
-    .ca-login-tagline { font-size: .84rem; color: var(--ca-text-secondary); margin-top: -.35rem; }
-    .ca-login-divider { height: 1px; background: var(--ca-border); margin: 1.3rem 0 1.1rem 0; }
-    .ca-login-footnote {
-        font-size: .72rem; color: var(--ca-text-muted); line-height: 1.5; margin-top: 1.1rem;
-    }
-    .st-key-ca_google_login button {
-        width: 100%;
-        display: flex; align-items: center; justify-content: center; gap: 10px;
-        background: #fff !important; color: #3C4043 !important;
-        border: 1px solid var(--ca-border-strong) !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important; font-size: .92rem !important;
-        padding: .65rem 1rem !important;
-    }
-    .st-key-ca_google_login button:hover {
-        background: #F8F9FA !important; border-color: var(--ca-border-strong) !important;
-        box-shadow: 0 1px 3px rgba(16,24,40,.12) !important;
-    }
-    .ca-user-chip {
-        display: flex; align-items: center; gap: 8px;
-        padding: 8px 10px; margin-bottom: .3rem;
-        background: var(--ca-surface-alt); border: 1px solid var(--ca-border);
-        border-radius: var(--ca-radius-sm);
-    }
-    .ca-user-avatar { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; object-fit: cover; }
-    .ca-user-name { font-size: .82rem; font-weight: 600; color: var(--ca-text); line-height: 1.3; }
-    .ca-user-email { font-size: .7rem; color: var(--ca-text-muted); line-height: 1.2; word-break: break-all; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -584,57 +542,6 @@ def render_header(doc_count, chunk_count, ollama_online, model_ready):
     ), unsafe_allow_html=True)
 
 
-# Google "G" mark, inlined as a data-URI so st.button's Markdown label can render it as an icon.
-GOOGLE_G_ICON_DATA_URI = (
-    "data:image/svg+xml;base64,"
-    "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgd2lkdGg9IjQ4IiBoZWlnaHQ9"
-    "IjQ4Ij48cGF0aCBmaWxsPSIjRkZDMTA3IiBkPSJNNDMuNiAyMC41SDQyVjIwSDI0djhoMTEuM0MzMy43IDMyLjQgMjkuMyAzNSAyNCAz"
-    "NWMtNi42IDAtMTItNS40LTEyLTEyczUuNC0xMiAxMi0xMmMzLjEgMCA1LjggMS4xIDggM2w1LjctNS43QzM0LjYgNS4xIDI5LjYgMyAy"
-    "NCAzIDEyLjQgMyAzIDEyLjQgMyAyNHM5LjQgMjEgMjEgMjFzMjEtOS40IDIxLTIxYzAtMS40LS4xLTIuNy0uNC0zLjV6Ii8+PHBhdGgg"
-    "ZmlsbD0iI0ZGM0QwMCIgZD0iTTYuMyAxNC43bDYuNiA0LjhDMTQuNiAxNS45IDE4LjkgMTMgMjQgMTNjMy4xIDAgNS44IDEuMSA4IDNs"
-    "NS43LTUuN0MzNC42IDYuMSAyOS42IDQgMjQgNGMtNy43IDAtMTQuNCA0LjQtMTcuNyAxMC43eiIvPjxwYXRoIGZpbGw9IiM0Q0FGNTAi"
-    "IGQ9Ik0yNCA0NGM1LjUgMCAxMC41LTIuMSAxNC4zLTUuNmwtNi42LTUuNkMyOS42IDM0LjcgMjcgMzUuNSAyNCAzNS41Yy01LjIgMC05"
-    "LjYtMy41LTExLjItOC4zbC02LjUgNUM5LjUgMzkuNiAxNi4yIDQ0IDI0IDQ0eiIvPjxwYXRoIGZpbGw9IiMxOTc2RDIiIGQ9Ik00My42"
-    "IDIwLjVINDJWMjBIMjR2OGgxMS4zYy0xIDIuOC0yLjkgNS4xLTUuNCA2LjdsNi42IDUuNkMzOS45IDM4IDQ0IDMyIDQ0IDI0YzAtMS40"
-    "LS4xLTIuNy0uNC0zLjV6Ii8+PC9zdmc+"
-)
-
-
-def render_login_page():
-    st.markdown('<div class="ca-login-wrap">', unsafe_allow_html=True)
-    _, mid, _ = st.columns([1, 1.2, 1])
-    with mid:
-        with st.container(key="ca_login_card"):
-            st.markdown("""
-            <div class="ca-login-brand">
-                {brand_mark}
-                <div>
-                    <div class="ca-login-title">{app_name}</div>
-                    <div class="ca-login-tagline">{tagline}</div>
-                </div>
-            </div>
-            """.format(
-                brand_mark=brand_mark_html("ca-brand-mark"),
-                app_name=esc(APP_NAME), tagline=esc(APP_TAGLINE),
-            ), unsafe_allow_html=True)
-
-            with st.container(key="ca_google_login"):
-                if st.button(
-                    "![G]({icon}) &nbsp;Continue with Google".format(icon=GOOGLE_G_ICON_DATA_URI),
-                    use_container_width=True,
-                ):
-                    st.login("google")
-
-            st.markdown("""
-            <div class="ca-login-divider"></div>
-            <div class="ca-login-footnote">
-                Sign in with your Google account to access the compliance knowledge base.
-                We only use your name, email, and profile photo to identify your session.
-            </div>
-            """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
 def render_sidebar(chunks, ollama_online, model_ready):
     with st.sidebar:
         st.markdown("""
@@ -680,24 +587,6 @@ def render_sidebar(chunks, ollama_online, model_ready):
 
         st.markdown('<div class="ca-divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="ca-eyebrow">Session</div>', unsafe_allow_html=True)
-
-        user = st.user
-        if getattr(user, "is_logged_in", False):
-            st.markdown(
-                '<div class="ca-user-chip">'
-                '<img class="ca-user-avatar" src="{picture}"/>'
-                '<div><div class="ca-user-name">{name}</div>'
-                '<div class="ca-user-email">{email}</div></div>'
-                '</div>'.format(
-                    picture=esc(getattr(user, "picture", "") or ""),
-                    name=esc(getattr(user, "name", "") or "Signed in"),
-                    email=esc(getattr(user, "email", "") or ""),
-                ),
-                unsafe_allow_html=True,
-            )
-            if st.button("Sign out", use_container_width=True, icon=":material/logout:"):
-                st.logout()
-
         if st.button("Clear conversation", use_container_width=True, icon=":material/delete_sweep:"):
             st.session_state.messages = []
             st.rerun()
@@ -849,10 +738,6 @@ def main():
     page_icon = FAVICON_FILE if os.path.exists(FAVICON_FILE) else "⚖️"
     st.set_page_config(page_title=APP_NAME, page_icon=page_icon, layout="wide")
     inject_css()
-
-    if not st.user.is_logged_in:
-        render_login_page()
-        return
 
     index, chunks = load_vectorstore()
     embedding_model = load_embedding_model()
