@@ -24,6 +24,7 @@ import io
 import json
 import base64
 import hashlib
+import datetime
 from html import escape as esc
 
 import requests
@@ -32,6 +33,8 @@ import faiss
 import fitz
 import streamlit as st
 from sentence_transformers import SentenceTransformer
+
+import letterhead
 
 # --------------------------------------------------------------------------
 # Configuration
@@ -762,6 +765,60 @@ def render_header(doc_count, chunk_count, ollama_online, model_ready):
     ), unsafe_allow_html=True)
 
 
+# --------------------------------------------------------------------------
+# Legal letterhead PDF export
+# --------------------------------------------------------------------------
+def get_advocate():
+    return {
+        "name": (st.session_state.get("adv_name") or "Adv. Ankur Gaurav").strip(),
+        "enrolment": (st.session_state.get("adv_enrol") or "").strip(),
+        "place": (st.session_state.get("adv_place") or "").strip(),
+    }
+
+
+def _sources_key(sources):
+    slim = [
+        {
+            "source": s.get("source", ""),
+            "chunk_id": s.get("chunk_id", ""),
+            "text": s.get("text", ""),
+        }
+        for s in (sources or [])
+    ]
+    return json.dumps(slim, ensure_ascii=False, sort_keys=True)
+
+
+@st.cache_data(show_spinner=False)
+def _answer_pdf_bytes(question, answer, sources_key, adv_name, adv_enrol, adv_place):
+    entry = {"question": question, "answer": answer, "sources": json.loads(sources_key)}
+    adv = {"name": adv_name, "enrolment": adv_enrol, "place": adv_place}
+    return letterhead.build_legal_pdf([entry], advocate=adv)
+
+
+@st.cache_data(show_spinner=False)
+def _session_pdf_bytes(entries_key, adv_name, adv_enrol, adv_place):
+    entries = json.loads(entries_key)
+    adv = {"name": adv_name, "enrolment": adv_enrol, "place": adv_place}
+    return letterhead.build_legal_pdf(entries, advocate=adv)
+
+
+def render_answer_download(question, answer, sources, key):
+    if not answer:
+        return
+    adv = get_advocate()
+    try:
+        pdf_bytes = _answer_pdf_bytes(
+            question or "", answer, _sources_key(sources),
+            adv["name"], adv["enrolment"], adv["place"])
+    except Exception as exc:  # noqa: BLE001
+        st.caption("Letterhead PDF unavailable: {}".format(exc))
+        return
+    fname = "Compliance-Opinion-{}.pdf".format(datetime.date.today().isoformat())
+    st.download_button(
+        "Download as legal opinion (PDF)", data=pdf_bytes, file_name=fname,
+        mime="application/pdf", key=key, icon=":material/verified:")
+
+
 def render_sidebar(chunks, ollama_online, model_ready):
     with st.sidebar:
         st.markdown("""
@@ -813,6 +870,35 @@ def render_sidebar(chunks, ollama_online, model_ready):
                 doc_card_html(att["name"], len(att["chunks"])) for att in attachments
             )
             st.markdown(cards, unsafe_allow_html=True)
+
+        st.markdown('<div class="ca-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="ca-eyebrow">Legal Letterhead</div>', unsafe_allow_html=True)
+        with st.expander("Advocate & document details", icon=":material/stylus_note:"):
+            st.text_input("Advocate name", key="adv_name")
+            st.text_input("Enrolment no.", key="adv_enrol", placeholder="e.g. D/1234/2019")
+            st.text_input("Place", key="adv_place", placeholder="e.g. New Delhi")
+            st.caption("Used in the header, footer verification and signature block "
+                       "of the exported PDF.")
+
+        answered = [
+            {"question": m.get("question", ""), "answer": m["content"],
+             "sources": m.get("sources", [])}
+            for m in st.session_state.get("messages", [])
+            if m["role"] == "assistant" and m.get("kind", "normal") == "normal" and m["content"]
+        ]
+        if answered:
+            adv = get_advocate()
+            try:
+                full_pdf = _session_pdf_bytes(
+                    json.dumps(answered, ensure_ascii=False, sort_keys=True),
+                    adv["name"], adv["enrolment"], adv["place"])
+                st.download_button(
+                    "Download full session (PDF)", data=full_pdf,
+                    file_name="Compliance-Report-{}.pdf".format(datetime.date.today().isoformat()),
+                    mime="application/pdf", use_container_width=True,
+                    icon=":material/verified:")
+            except Exception as exc:  # noqa: BLE001
+                st.caption("Report export unavailable: {}".format(exc))
 
         st.markdown('<div class="ca-divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="ca-eyebrow">Session</div>', unsafe_allow_html=True)
@@ -884,7 +970,7 @@ def render_sources(sources):
         st.markdown(cards, unsafe_allow_html=True)
 
 
-def render_message(msg):
+def render_message(msg, idx=0):
     role = msg["role"]
     avatar = ":material/gavel:" if role == "assistant" else None
     with st.chat_message(role, avatar=avatar):
@@ -908,6 +994,10 @@ def render_message(msg):
                 st.markdown(msg["content"])
             if msg.get("sources"):
                 render_sources(msg["sources"])
+            if role == "assistant" and msg["content"]:
+                render_answer_download(
+                    msg.get("question", ""), msg["content"], msg.get("sources"),
+                    key="dl_hist_{}".format(idx))
 
 
 def handle_user_message(text, files, index, chunks, embedding_model, chat_container):
@@ -988,8 +1078,12 @@ def handle_user_message(text, files, index, chunks, embedding_model, chat_contai
 
             if retrieved:
                 render_sources(retrieved)
+            render_answer_download(
+                question, full_response, retrieved,
+                key="dl_live_{}".format(len(st.session_state.messages)))
         st.session_state.messages.append({
-            "role": "assistant", "content": full_response, "sources": retrieved, "kind": "normal"})
+            "role": "assistant", "content": full_response, "sources": retrieved,
+            "question": question, "kind": "normal"})
 
 
 # --------------------------------------------------------------------------
@@ -1014,6 +1108,10 @@ def main():
     page_icon = FAVICON_FILE if os.path.exists(FAVICON_FILE) else "⚖️"
     st.set_page_config(page_title=APP_NAME, page_icon=page_icon, layout="wide")
     inject_css()
+
+    st.session_state.setdefault("adv_name", "Adv. Ankur Gaurav")
+    st.session_state.setdefault("adv_enrol", "")
+    st.session_state.setdefault("adv_place", "")
 
     index, chunks = load_vectorstore()
     embedding_model = load_embedding_model()
@@ -1050,8 +1148,8 @@ def main():
         else:
             chat_container = st.container(height=560)
             with chat_container:
-                for msg in st.session_state.messages:
-                    render_message(msg)
+                for i, msg in enumerate(st.session_state.messages):
+                    render_message(msg, i)
 
         if has_input:
             handle_user_message(user_text, user_files, index, chunks, embedding_model, chat_container)
