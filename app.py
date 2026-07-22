@@ -31,6 +31,7 @@ import requests
 import numpy as np
 import faiss
 import fitz
+import olefile
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 
@@ -74,14 +75,15 @@ EXAMPLE_QUESTIONS = [
 PDF_EXTS = {"pdf"}
 IMAGE_EXTS = {"png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "gif"}
 DOCX_EXTS = {"docx"}
+DOC_EXTS = {"doc"}  # legacy Word 97-2003 binary format
 TEXT_EXTS = {
     "txt", "md", "markdown", "csv", "tsv", "json", "log",
     "xml", "html", "htm", "yaml", "yml", "ini", "cfg", "py", "js", "ts",
 }
 # Formats offered in the picker but not directly parseable -> user is told to convert.
-CONVERT_EXTS = {"doc", "odt", "rtf", "pages"}
+CONVERT_EXTS = {"odt", "rtf", "pages"}
 SUPPORTED_UPLOAD_EXTS = sorted(
-    PDF_EXTS | IMAGE_EXTS | DOCX_EXTS | TEXT_EXTS | CONVERT_EXTS
+    PDF_EXTS | IMAGE_EXTS | DOCX_EXTS | DOC_EXTS | TEXT_EXTS | CONVERT_EXTS
 )
 
 ATTACH_CHUNK_SIZE = 800
@@ -232,6 +234,42 @@ def _extract_docx(data):
     return "\n".join(p for p in parts if p).strip()
 
 
+_OLE_MAGIC = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"
+
+
+def _extract_doc(data, min_run_chars=6):
+    """Best-effort text extraction for legacy Word 97-2003 (.doc) files.
+
+    .doc is a binary OLE2 compound format; a full parse requires walking the
+    FIB/piece table. Instead this scans the WordDocument stream for runs of
+    printable text (UTF-16LE, which Word normally uses, falling back to
+    CP1252/ANSI) - it recovers body text well for ordinary documents without
+    needing external binaries (antiword/LibreOffice) or MS Word itself.
+    """
+    if data[:8] != _OLE_MAGIC:
+        raise ValueError("not a valid legacy .doc (OLE2) file")
+    ole = olefile.OleFileIO(io.BytesIO(data))
+    try:
+        if not ole.exists("WordDocument"):
+            raise ValueError("no WordDocument stream found")
+        raw = ole.openstream("WordDocument").read()
+    finally:
+        ole.close()
+
+    u16_pat = re.compile(rb"(?:[\x09\x0A\x0D\x20-\x7E]\x00){%d,}" % min_run_chars)
+    u16_runs = [m.group(0).decode("utf-16le") for m in u16_pat.finditer(raw)]
+    ansi_pat = re.compile(rb"[\x09\x0A\x0D\x20-\x7E]{%d,}" % min_run_chars)
+    ansi_runs = [m.group(0).decode("cp1252", "ignore") for m in ansi_pat.finditer(raw)]
+    runs = u16_runs if sum(len(r) for r in u16_runs) >= sum(len(r) for r in ansi_runs) else ansi_runs
+
+    cleaned = []
+    for r in runs:
+        r = re.sub(r"[ \t]{2,}", " ", r).strip()
+        if len(r) >= min_run_chars:
+            cleaned.append(r)
+    return "\n".join(cleaned)
+
+
 def _extract_image(data):
     engine = load_ocr_engine()
     result, _ = engine(data)
@@ -259,6 +297,16 @@ def extract_text_from_upload(name, data):
             return _extract_image(data), None
         if ext in DOCX_EXTS:
             return _extract_docx(data), None
+        if ext in DOC_EXTS:
+            try:
+                text = _extract_doc(data)
+            except Exception:  # noqa: BLE001 - fall through to a clear message below
+                return "", ("Could not read this .doc file (unsupported or corrupt "
+                            "layout) — please save it as .docx or PDF and re-attach.")
+            if not text.strip():
+                return "", ("No readable text found in this .doc file — please save "
+                            "it as .docx or PDF and re-attach.")
+            return text, None
         if ext in CONVERT_EXTS or _looks_binary(data):
             return "", ("Can't read this format directly — please convert "
                         "it to PDF or .docx and re-attach.")
@@ -676,7 +724,7 @@ def attach_icon(name):
         return "📄"
     if ext in IMAGE_EXTS:
         return "🖼️"
-    if ext in DOCX_EXTS or ext in CONVERT_EXTS:
+    if ext in DOCX_EXTS or ext in DOC_EXTS or ext in CONVERT_EXTS:
         return "📝"
     return "📎"
 
@@ -1022,7 +1070,13 @@ def handle_user_message(text, files, index, chunks, embedding_model, chat_contai
                 icons = {"ok": "✅", "empty": "•", "error": "⚠️", "duplicate": "↺"}
                 for name, state, detail in notes:
                     st.write("{} **{}** — {}".format(icons.get(state, "•"), esc(name), detail))
-                status.update(label="Attachments processed", state="complete", expanded=False)
+                had_problem = any(state in ("error", "empty") for _, state, _ in notes)
+                status.update(
+                    label="Attachments processed" if not had_problem
+                    else "Some attachments could not be read — see details above",
+                    state="complete" if not had_problem else "error",
+                    expanded=had_problem,
+                )
 
         # Question sent to the model; default to a summary ask when only files were sent.
         question = text or DEFAULT_ATTACH_PROMPT
